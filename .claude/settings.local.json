@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "Bash(pip install:*)",
+      "Bash(curl -s \"https://site.api.espn.com/apis/v2/sports/soccer/eng.1/standings\")",
+      "Bash(python3 -c ':*)",
+      "Bash(curl -s \"https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/teams\")",
+      "WebFetch(domain:site.api.espn.com)",
+      "WebFetch(domain:understat.com)",
+      "WebFetch(domain:fbref.com)",
+      "WebFetch(domain:api.football-data.org)",
+      "WebFetch(domain:www.whoscored.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:fantasy.premierleague.com)"
+    ]
+  }
+}
