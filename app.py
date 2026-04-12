@@ -4,6 +4,7 @@ import json
 import re
 import math
 import io
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import plotly.graph_objects as go
 from urllib.parse import unquote
@@ -304,7 +305,7 @@ def fetch_fpl_data() -> tuple:
 
     fdr_map = {name: round(sum(v) / len(v), 1) for name, v in fdr_future.items() if v}
 
-    # Compute per-game xG/xGA using games played derived from finished fixtures
+    # Compute per-game xG/xGA season averages (used for model inputs)
     xg_stats = {}
     for tid, canon in fpl_id_map.items():
         gp = max(team_gp.get(tid, 1), 1)
@@ -312,6 +313,77 @@ def fetch_fpl_data() -> tuple:
             'xg':  round(team_xg_tot[tid]  / gp, 2),
             'xga': round(team_xga_tot[tid] / gp, 2),
         }
+
+    # ── Fetch per-match xG from GW live endpoints (parallel) ──────────────
+    finished_gws = sorted({f['event'] for f in all_fixtures
+                            if f.get('finished') and f.get('event')})
+    player_team_id = {p['id']: p['team'] for p in bootstrap.get('elements', [])}
+    player_type_id = {p['id']: p['element_type'] for p in bootstrap.get('elements', [])}
+
+    def _fetch_gw_xg(gw: int):
+        r = requests.get(f'https://fantasy.premierleague.com/api/event/{gw}/live/',
+                         timeout=15).json()
+        t_xg  = defaultdict(float)
+        t_xga = defaultdict(float)
+        for el in r.get('elements', []):
+            pid  = el['id']
+            tid  = player_team_id.get(pid)
+            s    = el.get('stats', {})
+            if not s.get('minutes', 0) or tid is None:
+                continue
+            t_xg[tid]  += float(s.get('expected_goals', 0) or 0)
+            if player_type_id.get(pid) == 1:   # GK
+                t_xga[tid] += float(s.get('expected_goals_conceded', 0) or 0)
+        return gw, dict(t_xg), dict(t_xga)
+
+    # (team_id, gw) → {xg, xga}
+    match_xg: dict = {}
+    try:
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futs = {ex.submit(_fetch_gw_xg, gw): gw for gw in finished_gws}
+            for fut in as_completed(futs):
+                gw, t_xg, t_xga = fut.result()
+                for tid in set(t_xg) | set(t_xga):
+                    match_xg[(tid, gw)] = {
+                        'xg':  round(t_xg.get(tid, 0), 2),
+                        'xga': round(t_xga.get(tid, 0), 2),
+                    }
+    except Exception:
+        pass   # fall back to season average if live fetch fails
+
+    # Attach per-match xG/xGA to match_history entries
+    # We need fpl_team_id (int) → canonical name reverse map
+    canon_to_fpl_id = {v: k for k, v in fpl_id_map.items()}
+    # Also need the original GW number before renumbering — store it
+    # Rebuild using gw_fixtures map to look up xG by (team_id, event_gw)
+    fix_gw_map = {}   # (team_id, fpl_event_gw) → xG dict
+    for f in all_fixtures:
+        if f.get('finished') and f.get('event'):
+            ev = f['event']
+            for tid in (f['team_h'], f['team_a']):
+                key = (tid, ev)
+                if key in match_xg:
+                    fix_gw_map[key] = match_xg[key]
+
+    # Pre-build (team_id, date) → event_gw for fast lookup
+    team_date_to_gw: dict = {}
+    for f in all_fixtures:
+        if f.get('finished') and f.get('event'):
+            date = (f.get('kickoff_time') or '')[:10]
+            ev   = f['event']
+            team_date_to_gw[(f['team_h'], date)] = ev
+            team_date_to_gw[(f['team_a'], date)] = ev
+
+    for canon, ms in match_history.items():
+        fpl_tid = canon_to_fpl_id.get(canon)
+        for m in ms:
+            xg_data = None
+            if fpl_tid:
+                ev = team_date_to_gw.get((fpl_tid, m['date']))
+                if ev:
+                    xg_data = match_xg.get((fpl_tid, ev))
+            m['xg']  = xg_data['xg']  if xg_data else None
+            m['xga'] = xg_data['xga'] if xg_data else None
 
     return xg_stats, dict(match_history), fdr_map
 
@@ -385,12 +457,12 @@ def fetch_all_live_data() -> tuple:
 
 # ── TEAM ANALYSER HELPERS ────────────────────────────────────────────────────
 def enrich_matches(matches: list, team_xg: float, team_xga: float) -> list:
-    """Add xG/xGA/xpts estimates to FPL match history using team season averages."""
+    """Add xG/xGA/xpts to FPL match history. Uses per-match values when available,
+    falls back to season average."""
     result = []
     for m in matches:
-        # Use team season-average xG as per-match estimate (best available without Understat)
-        xgf = team_xg
-        xga = team_xga
+        xgf = m['xg']  if m.get('xg')  is not None else team_xg
+        xga = m['xga'] if m.get('xga') is not None else team_xga
         result.append({**m, 'xg': round(xgf, 2), 'xga': round(xga, 2),
                         'xpts': calc_xpts(xgf, xga)})
     return result
@@ -840,15 +912,20 @@ with tab5:
                         for i in range(len(matches)) if i >= window-1]
 
             gw_labels = [f"GW{m['gw']}" for m in matches[4:]]
-            r_xpts = _roll('xpts')
-            r_gf   = _roll('goalsFor')
-            r_ga   = _roll('goalsAgainst')
+            r_gf  = _roll('goalsFor')
+            r_ga  = _roll('goalsAgainst')
+            # Rolling PPG from actual results
+            pts_per_match = [3 if m['result']=='W' else 1 if m['result']=='D' else 0 for m in matches]
+            r_ppg = [sum(pts_per_match[i-4:i+1])/5 for i in range(len(matches)) if i >= 4]
+            # Rolling xPts — only if per-match xG available
+            has_xg = all(m.get('xg') is not None for m in matches)
+            r_xpts = _roll('xpts') if has_xg else None
 
-            chart_opts = dict(plot_bgcolor='#16181c', paper_bgcolor='#16181c',
-                              font=dict(color='#9095a3', size=11), height=230,
+            chart_opts = dict(plot_bgcolor='#ffffff', paper_bgcolor='#ffffff',
+                              font=dict(color='#374151', size=11), height=230,
                               margin=dict(t=36, b=20, l=20, r=20),
                               legend=dict(font=dict(size=10)))
-            ax = dict(gridcolor='#252830', tickfont=dict(size=9))
+            ax = dict(gridcolor='#e5e7eb', tickfont=dict(size=9), color='#6b7280')
 
             cc1, cc2 = st.columns(2)
             with cc1:
@@ -862,12 +939,21 @@ with tab5:
                 st.plotly_chart(fig, width='stretch')
             with cc2:
                 fig2 = go.Figure()
-                fig2.add_trace(go.Scatter(x=gw_labels, y=r_xpts, name='xPts/game',
-                                          fill='tozeroy', line=dict(color='#3b82f6', width=2),
-                                          fillcolor='rgba(59,130,246,0.08)'))
+                if r_xpts:
+                    fig2.add_trace(go.Scatter(x=gw_labels, y=r_xpts, name='xPts/game',
+                                              fill='tozeroy', line=dict(color='#3b82f6', width=2),
+                                              fillcolor='rgba(59,130,246,0.08)'))
+                    fig2.add_trace(go.Scatter(x=gw_labels, y=r_ppg, name='Actual PPG',
+                                              line=dict(color='#f59e0b', width=1.5, dash='dot')))
+                    title2 = 'xPoints vs PPG — 5-game rolling'
+                else:
+                    fig2.add_trace(go.Scatter(x=gw_labels, y=r_ppg, name='PPG',
+                                              fill='tozeroy', line=dict(color='#3b82f6', width=2),
+                                              fillcolor='rgba(59,130,246,0.08)'))
+                    title2 = 'Points per game — 5-game rolling'
                 fig2.add_trace(go.Scatter(x=gw_labels, y=[LEAGUE_AVGS['ppg']]*len(gw_labels),
                                           name='Lg avg', line=dict(color='#5c6070', width=1, dash='dash')))
-                fig2.update_layout(title='xPoints/game — 5-game rolling', **chart_opts)
+                fig2.update_layout(title=title2, **chart_opts)
                 fig2.update_xaxes(**ax); fig2.update_yaxes(**ax)
                 st.plotly_chart(fig2, width='stretch')
 
@@ -881,11 +967,12 @@ with tab5:
             f"{lg['goalsFor']}–{lg['goalsAgainst']} &nbsp;"
             f"<span style='color:#9095a3;font-size:18px'>vs {lg['opponent']} ({'Home' if lg['venue']=='H' else 'Away'}) · {lg['date'][:10]}</span></div>",
             unsafe_allow_html=True)
-        lc1, lc2, lc3, lc4 = st.columns(4)
-        lc1.metric("xG",   f"{lg['xg']:.2f}")
-        lc2.metric("xGA",  f"{lg['xga']:.2f}")
-        lc3.metric("xPts", f"{lg['xpts']:.2f}")
-        lc4.metric("Result pts", 3 if lg['result']=='W' else 1 if lg['result']=='D' else 0)
+        lc1, lc2, lc3, lc4, lc5 = st.columns(5)
+        lc1.metric("Goals scored",   lg['goalsFor'])
+        lc2.metric("Goals conceded", lg['goalsAgainst'])
+        lc3.metric("xG",   f"{lg['xg']:.2f}"   if lg.get('xg')   is not None else "—")
+        lc4.metric("xGA",  f"{lg['xga']:.2f}"  if lg.get('xga')  is not None else "—")
+        lc5.metric("Points", 3 if lg['result']=='W' else 1 if lg['result']=='D' else 0)
 
         verdict = generate_verdict(selected, matches)
         st.markdown(
@@ -940,8 +1027,11 @@ with tab5:
         # ── Match log ─────────────────────────────────────────────────────
         with st.expander("Full match log"):
             log_df = pd.DataFrame([{
-                'GW': m['gw'], 'Opponent': m['opponent'], 'Venue': m['venue'],
+                'GW': m['gw'], 'Date': m['date'], 'Opponent': m['opponent'], 'Venue': m['venue'],
                 'Score': f"{m['goalsFor']}–{m['goalsAgainst']}", 'Result': m['result'],
-                'xG': m['xg'], 'xGA': m['xga'], 'xPts': m['xpts'],
+                'Pts': 3 if m['result']=='W' else 1 if m['result']=='D' else 0,
+                'xG':  round(m['xg'],  2) if m.get('xg')  is not None else '—',
+                'xGA': round(m['xga'], 2) if m.get('xga') is not None else '—',
+                'xPts': round(m['xpts'], 2) if m.get('xpts') is not None else '—',
             } for m in matches])
             st.dataframe(log_df, hide_index=True, width='stretch')
