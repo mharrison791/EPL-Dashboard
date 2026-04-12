@@ -12,7 +12,12 @@
       "WebFetch(domain:api.football-data.org)",
       "WebFetch(domain:www.whoscored.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:fantasy.premierleague.com)"
+      "WebFetch(domain:fantasy.premierleague.com)",
+      "Bash(python -c ':*)",
+      "Bash(python test_understat.py)",
+      "Bash(python -W ignore -c \"import requests,json; r=requests.get\\('https://site.api.espn.com/apis/v2/sports/soccer/eng.1/standings',timeout=12\\); d=r.json\\(\\); sec=[s for s in d.get\\('children',[]\\) if s.get\\('name'\\)=='Overall']; e=sec[0]['standings']['entries'][0]; print\\(e['team']['displayName']\\); print\\([s['name'] for s in e.get\\('stats',[]\\)]\\)\")",
+      "Bash(python -W ignore -c \"import requests,json; r=requests.get\\('https://site.api.espn.com/apis/v2/sports/soccer/eng.1/standings',timeout=12\\); d=r.json\\(\\); print\\('sections:',[s.get\\('name'\\) for s in d.get\\('children',[]\\)]\\)\")",
+      "Bash(python -W ignore -c ':*)"
     ]
   }
 }

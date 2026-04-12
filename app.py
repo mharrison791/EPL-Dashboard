@@ -71,15 +71,13 @@ WLS_C = {
 }
 LEAGUE_AVGS = {'xg': 1.50, 'xga': 1.50, 'sot': 4.4, 'ppg': 1.26, 'hwr': 0.45, 'awr': 0.28, 'rolling': 1.26}
 
-UNDERSTAT_SEASON = "2025"
-
 # ── NAME NORMALISATION ───────────────────────────────────────────────────────
 # All sources → a shared canonical name used throughout the app
 _RAW_MAP = {
     # ESPN
     'Arsenal': 'Arsenal',
     'Aston Villa': 'Aston Villa',
-    'Bournemouth': 'Bournemouth',
+    'AFC Bournemouth': 'Bournemouth', 'Bournemouth': 'Bournemouth',
     'Brentford': 'Brentford',
     'Brighton & Hove Albion': 'Brighton', 'Brighton': 'Brighton',
     'Burnley': 'Burnley',
@@ -193,6 +191,17 @@ def approx_ppda(xg: float, xga: float) -> float:
 # ── DATA SOURCES ─────────────────────────────────────────────────────────────
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0'}
 
+# ESPN team ID → canonical name lookup (for Team Analyser match fetching)
+ESPN_TEAM_IDS = {
+    'Arsenal': '359', 'Manchester City': '382', 'Manchester United': '360',
+    'Aston Villa': '362', 'Liverpool': '364', 'Chelsea': '363',
+    'Brentford': '337', 'Everton': '368', 'Fulham': '370',
+    'Bournemouth': '349', 'Brighton': '331', 'Sunderland': '366',
+    'Newcastle': '361', 'Crystal Palace': '384', 'Leeds United': '357',
+    'Tottenham': '367', "Nott'm Forest": '393', 'West Ham': '371',
+    'Burnley': '379', 'Wolves': '380',
+}
+
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_espn_standings() -> dict:
     """ESPN unofficial API → pld, w, d, l, gf, ga, pts per team."""
@@ -201,136 +210,132 @@ def fetch_espn_standings() -> dict:
         timeout=12
     )
     r.raise_for_status()
+    # Structure: children[0].standings.entries (no "Overall" sub-section anymore)
+    entries = r.json()['children'][0].get('standings', {}).get('entries', [])
     result = {}
-    for section in r.json().get('children', []):
-        if section.get('name') != 'Overall':
-            continue
-        for entry in section.get('standings', {}).get('entries', []):
-            name = to_canonical(entry['team']['displayName'])
-            sd = {s['name']: s.get('value', 0) for s in entry.get('stats', [])}
-            result[name] = {
-                'name': name,
-                'pld': int(sd.get('gamesPlayed', 0)),
-                'w':   int(sd.get('wins', 0)),
-                'd':   int(sd.get('ties', 0)),
-                'l':   int(sd.get('losses', 0)),
-                'gf':  int(sd.get('pointsFor', 0)),
-                'ga':  int(sd.get('pointsAgainst', 0)),
-                'pts': int(sd.get('points', 0)),
-            }
+    for entry in entries:
+        name = to_canonical(entry['team']['displayName'])
+        sd = {s['name']: s.get('value', 0) for s in entry.get('stats', [])}
+        result[name] = {
+            'name': name,
+            'pld': int(sd.get('gamesPlayed', 0)),
+            'w':   int(sd.get('wins', 0)),
+            'd':   int(sd.get('ties', 0)),
+            'l':   int(sd.get('losses', 0)),
+            'gf':  int(sd.get('pointsFor', 0)),
+            'ga':  int(sd.get('pointsAgainst', 0)),
+            'pts': int(sd.get('points', 0)),
+        }
     return result
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_understat(season: str = UNDERSTAT_SEASON) -> tuple:
-    """
-    Scrape Understat for teamsData and datesData.
-    Returns (teams_dict, dates_dict) keyed by canonical name / date string.
-    """
-    r = requests.get(f'https://understat.com/league/EPL/{season}', headers=HEADERS, timeout=20)
-    r.raise_for_status()
-
-    def _decode(raw: str):
-        # Understat uses \xNN hex escapes inside the JSON string
-        try:
-            return json.loads(unquote(raw.replace('\\x', '%')))
-        except Exception:
-            pass
-        try:
-            return json.loads(raw.encode('utf-8').decode('unicode_escape'))
-        except Exception:
-            return {}
-
-    def _extract(var_name: str):
-        m = re.search(rf"var {var_name}\s*=\s*JSON\.parse\('(.+?)'\)\s*;", r.text, re.DOTALL)
-        return _decode(m.group(1)) if m else {}
-
-    teams_raw = _extract('teamsData')
-    dates_raw = _extract('datesData')
-
-    # Re-key teamsData by canonical name; keep 'history' and 'id'
-    teams = {}
-    id_to_canonical = {}
-    for tid, info in teams_raw.items():
-        canon = to_canonical(info.get('title', ''))
-        id_to_canonical[tid] = canon
-        teams[canon] = {'history': info.get('history', []), 'us_id': tid}
-
-    # Flatten datesData into a list of matches with both team names resolved
-    matches_flat = []
-    for _date, day in dates_raw.items():
-        for m in (day if isinstance(day, list) else []):
-            if not m.get('isResult', False):
-                continue
-            h_id = str(m.get('h', {}).get('id', ''))
-            a_id = str(m.get('a', {}).get('id', ''))
-            h_canon = id_to_canonical.get(h_id, to_canonical(m.get('h', {}).get('title', '')))
-            a_canon = id_to_canonical.get(a_id, to_canonical(m.get('a', {}).get('title', '')))
-            xg_h = float(m.get('xG', {}).get('h', 0) or 0)
-            xg_a = float(m.get('xG', {}).get('a', 0) or 0)
-            gf_h = int(m.get('goals', {}).get('h', 0) or 0)
-            ga_h = int(m.get('goals', {}).get('a', 0) or 0)
-            matches_flat.append({
-                'date': _date,
-                'home': h_canon, 'away': a_canon,
-                'gf_home': gf_h, 'ga_home': ga_h,
-                'xg_home': xg_h, 'xg_away': xg_a,
-            })
-
-    matches_flat.sort(key=lambda x: x['date'])
-    return teams, matches_flat
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_fpl_fdr() -> dict:
-    """FPL API → average FDR (1–5) for remaining fixtures per team."""
+def fetch_fpl_data() -> tuple:
+    """
+    FPL bootstrap-static → team xG/xGA (aggregated from player data) +
+    FPL fixtures → per-team match history + future FDR.
+    Returns (xg_stats, match_history, fdr_map).
+    """
     bootstrap = requests.get(
         'https://fantasy.premierleague.com/api/bootstrap-static/', timeout=12
     ).json()
     fpl_id_map = {t['id']: to_canonical(t['name']) for t in bootstrap.get('teams', [])}
 
-    fixtures = requests.get(
-        'https://fantasy.premierleague.com/api/fixtures/?future=1', timeout=12
+    # Get games played per team from finished fixtures
+    from collections import defaultdict
+    team_gp = defaultdict(int)
+
+    # Aggregate xG (all players) and xGA (GK proxy) per team
+    team_xg_tot  = defaultdict(float)
+    team_xga_tot = defaultdict(float)
+    for p in bootstrap.get('elements', []):
+        if not p.get('minutes', 0):
+            continue
+        tid = p['team']
+        team_xg_tot[tid]  += float(p.get('expected_goals', 0) or 0)
+        if p['element_type'] == 1:   # goalkeeper
+            team_xga_tot[tid] += float(p.get('expected_goals_conceded', 0) or 0)
+
+    # Fixtures → match history + future FDR + games played count
+    all_fixtures = requests.get(
+        'https://fantasy.premierleague.com/api/fixtures/', timeout=12
     ).json()
 
-    team_diffs: dict = {}
-    for fix in fixtures:
-        h = fpl_id_map.get(fix.get('team_h'))
-        a = fpl_id_map.get(fix.get('team_a'))
-        hd = fix.get('team_h_difficulty', 3)
-        ad = fix.get('team_a_difficulty', 3)
-        if h:
-            team_diffs.setdefault(h, []).append(hd)
-        if a:
-            team_diffs.setdefault(a, []).append(ad)
+    match_history: dict = defaultdict(list)   # canon_name → sorted list of matches
+    fdr_future: dict   = defaultdict(list)    # canon_name → list of future difficulties
 
-    return {name: round(sum(v) / len(v), 1) for name, v in team_diffs.items() if v}
+    for fix in all_fixtures:
+        if fix.get('finished'):
+            team_gp[fix.get('team_h', 0)] += 1
+            team_gp[fix.get('team_a', 0)] += 1
+        h_canon = fpl_id_map.get(fix.get('team_h'))
+        a_canon = fpl_id_map.get(fix.get('team_a'))
+        if not h_canon or not a_canon:
+            continue
+
+        if fix.get('finished'):
+            gf_h = fix.get('team_h_score', 0) or 0
+            gf_a = fix.get('team_a_score', 0) or 0
+            gw   = fix.get('event') or 0
+            date = (fix.get('kickoff_time') or '')[:10]
+            match_history[h_canon].append({
+                'gw': gw, 'date': date, 'opponent': a_canon, 'venue': 'H',
+                'goalsFor': gf_h, 'goalsAgainst': gf_a,
+                'result': 'W' if gf_h > gf_a else 'D' if gf_h == gf_a else 'L',
+            })
+            match_history[a_canon].append({
+                'gw': gw, 'date': date, 'opponent': h_canon, 'venue': 'A',
+                'goalsFor': gf_a, 'goalsAgainst': gf_h,
+                'result': 'W' if gf_a > gf_h else 'D' if gf_a == gf_h else 'L',
+            })
+        elif not fix.get('finished'):
+            hd = fix.get('team_h_difficulty', 3)
+            ad = fix.get('team_a_difficulty', 3)
+            if h_canon:
+                fdr_future[h_canon].append(hd)
+            if a_canon:
+                fdr_future[a_canon].append(ad)
+
+    # Sort each team's match list by GW
+    for canon in match_history:
+        match_history[canon].sort(key=lambda x: (x['gw'], x['date']))
+        for i, m in enumerate(match_history[canon]):
+            m['gw'] = i + 1  # re-number sequentially
+
+    fdr_map = {name: round(sum(v) / len(v), 1) for name, v in fdr_future.items() if v}
+
+    # Compute per-game xG/xGA using games played derived from finished fixtures
+    xg_stats = {}
+    for tid, canon in fpl_id_map.items():
+        gp = max(team_gp.get(tid, 1), 1)
+        xg_stats[canon] = {
+            'xg':  round(team_xg_tot[tid]  / gp, 2),
+            'xga': round(team_xga_tot[tid] / gp, 2),
+        }
+
+    return xg_stats, dict(match_history), fdr_map
 
 
-def process_understat_team(history: list) -> dict:
-    """Derive xG, xGA, hwr, awr, rolling PPG from a team's match history."""
-    if not history:
+def _derive_form_stats(matches: list) -> dict:
+    """Derive hwr, awr, rolling PPG from a team's completed FPL match list."""
+    if not matches:
         return {}
-    n = len(history)
-    total_xg  = sum(float(m.get('xG', 0))  for m in history)
-    total_xga = sum(float(m.get('xGA', 0)) for m in history)
-    home = [m for m in history if m.get('h_a') == 'h']
-    away = [m for m in history if m.get('h_a') == 'a']
-    hw = sum(1 for m in home if m.get('result') == 'w')
-    aw = sum(1 for m in away if m.get('result') == 'w')
-    last6 = history[-6:]
-    rolling_pts = sum(3 if m.get('result') == 'w' else 1 if m.get('result') == 'd' else 0 for m in last6)
+    home  = [m for m in matches if m['venue'] == 'H']
+    away  = [m for m in matches if m['venue'] == 'A']
+    hw    = sum(1 for m in home if m['result'] == 'W')
+    aw    = sum(1 for m in away if m['result'] == 'W')
+    last6 = matches[-6:]
+    rolling_pts = sum(3 if m['result']=='W' else 1 if m['result']=='D' else 0 for m in last6)
     return {
-        'xg':     round(total_xg  / n, 2),
-        'xga':    round(total_xga / n, 2),
-        'sot':    round((total_xg / n) * 2.8, 1),
-        'hwr':    round(hw / len(home), 3) if home else 0.40,
-        'awr':    round(aw / len(away), 3) if away else 0.25,
+        'hwr':     round(hw / len(home), 3) if home else 0.40,
+        'awr':     round(aw / len(away), 3) if away else 0.25,
         'rolling': round(rolling_pts / len(last6), 2) if last6 else 1.26,
     }
 
 
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_all_live_data() -> tuple:
-    """Merge ESPN standings + Understat xG/form + FPL FDR into model-ready rows."""
+    """Merge ESPN standings + FPL xG/form/FDR into model-ready rows."""
     errors = []
 
     espn = {}
@@ -339,48 +344,38 @@ def fetch_all_live_data() -> tuple:
     except Exception as e:
         errors.append(f"ESPN standings: {e}")
 
-    us_teams, _ = {}, []
+    xg_stats, match_history, fdr_map = {}, {}, {}
     try:
-        us_teams, _ = fetch_understat()
+        xg_stats, match_history, fdr_map = fetch_fpl_data()
     except Exception as e:
-        errors.append(f"Understat: {e}")
-
-    fdr = {}
-    try:
-        fdr = fetch_fpl_fdr()
-    except Exception as e:
-        errors.append(f"FPL FDR: {e}")
-
-    # Process Understat xG stats per team
-    us_stats = {name: process_understat_team(info['history']) for name, info in us_teams.items()}
+        errors.append(f"FPL data: {e}")
 
     # Build merged rows
-    all_names = set(espn) | set(us_stats)
     rows = []
-    for name in all_names:
-        e = espn.get(name, {})
-        u = us_stats.get(name, {})
+    for name, e in espn.items():
         if not e.get('pld'):
             continue
-        xg  = u.get('xg',  1.40)
-        xga = u.get('xga', 1.40)
+        xg_data = xg_stats.get(name, {})
+        form    = _derive_form_stats(match_history.get(name, []))
+        xg  = xg_data.get('xg',  1.40)
+        xga = xg_data.get('xga', 1.40)
         rows.append({
             'name': name,
-            'pld':     e.get('pld', 0),
-            'w':       e.get('w',   0),
-            'd':       e.get('d',   0),
-            'l':       e.get('l',   0),
-            'gf':      e.get('gf',  0),
-            'ga':      e.get('ga',  0),
-            'pts':     e.get('pts', 0),
+            'pld':     e['pld'],
+            'w':       e['w'],
+            'd':       e['d'],
+            'l':       e['l'],
+            'gf':      e['gf'],
+            'ga':      e['ga'],
+            'pts':     e['pts'],
             'xg':      xg,
             'xga':     xga,
-            'sot':     u.get('sot',     round(xg * 2.8, 1)),
-            'hwr':     u.get('hwr',     0.40),
-            'awr':     u.get('awr',     0.25),
-            'rolling': u.get('rolling', 1.26),
+            'sot':     round(xg * 2.8, 1),
+            'hwr':     form.get('hwr',     0.40),
+            'awr':     form.get('awr',     0.25),
+            'rolling': form.get('rolling', 1.26),
             'ppda':    approx_ppda(xg, xga),
-            'fdr':     fdr.get(name, 2.5),
+            'fdr':     fdr_map.get(name, 2.5),
             'source':  'live',
         })
 
@@ -389,31 +384,15 @@ def fetch_all_live_data() -> tuple:
 
 
 # ── TEAM ANALYSER HELPERS ────────────────────────────────────────────────────
-def get_team_matches(team_name: str, matches_flat: list) -> list:
-    """Filter the flat match list for a specific team, from Understat datesData."""
+def enrich_matches(matches: list, team_xg: float, team_xga: float) -> list:
+    """Add xG/xGA/xpts estimates to FPL match history using team season averages."""
     result = []
-    for m in matches_flat:
-        is_home = m['home'] == team_name
-        is_away = m['away'] == team_name
-        if not (is_home or is_away):
-            continue
-        gf   = m['gf_home'] if is_home else m['ga_home']
-        ga   = m['ga_home'] if is_home else m['gf_home']
-        xgf  = m['xg_home'] if is_home else m['xg_away']
-        xga  = m['xg_away'] if is_home else m['xg_home']
-        opp  = m['away'] if is_home else m['home']
-        result.append({
-            'gw':           len(result) + 1,
-            'date':         m['date'],
-            'opponent':     opp,
-            'venue':        'H' if is_home else 'A',
-            'goalsFor':     gf,
-            'goalsAgainst': ga,
-            'result':       'W' if gf > ga else 'D' if gf == ga else 'L',
-            'xg':           round(xgf, 2),
-            'xga':          round(xga, 2),
-            'xpts':         calc_xpts(xgf, xga),
-        })
+    for m in matches:
+        # Use team season-average xG as per-match estimate (best available without Understat)
+        xgf = team_xg
+        xga = team_xga
+        result.append({**m, 'xg': round(xgf, 2), 'xga': round(xga, 2),
+                        'xpts': calc_xpts(xgf, xga)})
     return result
 
 def generate_verdict(team: str, matches: list) -> str:
@@ -422,11 +401,11 @@ def generate_verdict(team: str, matches: list) -> str:
         return "Insufficient data to generate a verdict."
 
     r6 = matches[-6:]
-    r6_ppg   = sum(3 if m['result'] == 'W' else 1 if m['result'] == 'D' else 0 for m in r6) / 6
-    r6_xg    = sum(m['xg']  for m in r6) / 6
-    r6_xga   = sum(m['xga'] for m in r6) / 6
-    r6_gf    = sum(m['goalsFor']     for m in r6) / 6
-    r6_xpts  = sum(m['xpts'] for m in r6) / 6
+    r6_ppg  = sum(3 if m['result'] == 'W' else 1 if m['result'] == 'D' else 0 for m in r6) / 6
+    r6_xg   = matches[0]['xg']  # season average (constant from FPL aggregation)
+    r6_xga  = matches[0]['xga']
+    r6_gf   = sum(m['goalsFor']     for m in r6) / 6
+    r6_ga   = sum(m['goalsAgainst'] for m in r6) / 6
 
     prev6 = matches[-12:-6] if len(matches) >= 12 else None
     prev_ppg = (sum(3 if m['result'] == 'W' else 1 if m['result'] == 'D' else 0
@@ -438,7 +417,7 @@ def generate_verdict(team: str, matches: list) -> str:
     if prev_ppg is not None:
         delta = r6_ppg - prev_ppg
         if delta > 0.4:
-            parts.append(f"{team} are on a strong upward trajectory, their rolling 6-game PPG of {r6_ppg:.2f} is up {delta:.2f} from the preceding six matches.")
+            parts.append(f"{team} are on a strong upward trajectory — rolling 6-game PPG of {r6_ppg:.2f}, up {delta:.2f} from the preceding six matches.")
         elif delta < -0.4:
             parts.append(f"{team}'s form has deteriorated sharply — down to {r6_ppg:.2f} PPG in the last six, from {prev_ppg:.2f} in the six before.")
         else:
@@ -446,25 +425,23 @@ def generate_verdict(team: str, matches: list) -> str:
     else:
         parts.append(f"{team} are averaging {r6_ppg:.2f} PPG over their last six league games.")
 
-    # xG vs actual goals
-    if r6_gf > r6_xg * 1.20:
-        parts.append(f"They are overperforming their xG — scoring {r6_gf:.2f} goals per game against an expected {r6_xg:.2f}, a rate that is unlikely to persist.")
-    elif r6_gf < r6_xg * 0.80:
-        parts.append(f"They are underperforming their xG of {r6_xg:.2f} per game, suggesting finishing improvements could unlock more points.")
+    # Season xG profile vs recent goals
+    if r6_xg > LEAGUE_AVGS['xg'] + 0.25:
+        parts.append(f"Their season xG of {r6_xg:.2f}/game ranks them among the top attacking teams in the league.")
+    elif r6_xg < LEAGUE_AVGS['xg'] - 0.25:
+        parts.append(f"Their season xG of {r6_xg:.2f}/game is below the league average — attacking output is a concern.")
 
-    # Defensive assessment
+    # Defensive assessment from xGA
     if r6_xga < 0.9:
-        parts.append(f"Defensively they look very strong, with just {r6_xga:.2f} xGA per game in recent weeks.")
-    elif r6_xga > 1.8:
-        parts.append(f"Defensively they look vulnerable — {r6_xga:.2f} xGA per game is a major concern for the run-in.")
+        parts.append(f"Defensively they look very strong — {r6_xga:.2f} xGA/game this season.")
+    elif r6_xga > 1.65:
+        parts.append(f"Defensively they look vulnerable — {r6_xga:.2f} xGA/game is well above the league average.")
 
-    # xPts vs actual pts
-    r6_actual_pts = sum(3 if m['result'] == 'W' else 1 if m['result'] == 'D' else 0 for m in r6)
-    r6_xpts_total = sum(m['xpts'] for m in r6)
-    if r6_actual_pts > r6_xpts_total + 3:
-        parts.append("They are collecting more points than their underlying xG warrants, suggesting some regression is likely.")
-    elif r6_actual_pts < r6_xpts_total - 3:
-        parts.append("Their actual results are lagging well behind their xPoints tally, implying they are due a better run of results.")
+    # Recent goals scored vs conceded in last 6
+    if r6_gf > r6_ga + 0.7:
+        parts.append(f"Recent results have been impressive — scoring {r6_gf:.1f} and conceding {r6_ga:.1f} per game in the last six.")
+    elif r6_ga > r6_gf + 0.7:
+        parts.append(f"They have been leaking goals recently — conceding {r6_ga:.1f} per game against {r6_gf:.1f} scored in the last six.")
 
     return " ".join(parts)
 
@@ -523,7 +500,7 @@ for k, v in [('fetched_data', None), ('last_results', None),
 with st.sidebar:
     st.markdown("## ⚽ EPL Predictor")
     st.caption("WLS Model v2 · 2025/26 Season")
-    st.caption("Data: ESPN · Understat · FPL API")
+    st.caption("Data: ESPN · FPL API")
     st.divider()
 
     col_a, col_b = st.columns(2)
@@ -564,7 +541,7 @@ with tab1:
 
     hc, bc = st.columns([4, 1])
     with hc:
-        st.caption("Pulls live data from **ESPN**, **Understat** (xG) and **FPL** (fixture difficulty). No API key needed.")
+        st.caption("Pulls live data from **ESPN** (standings) and **FPL** (xG, match history, FDR). No API key needed.")
     with bc:
         fetch_now = st.button("▶ Fetch Live Data", type="primary")
 
@@ -611,7 +588,7 @@ with tab1:
             'FDR': round(t['fdr'], 1),
         } for t in data])
         st.dataframe(df, width='stretch', hide_index=True)
-        st.caption("xG/xGA/SOT/Win rates from **Understat** · Roll PPG derived from Understat match history · "
+        st.caption("xG/xGA from **FPL** player expected goals (aggregated per team) · Win rates & rolling PPG from FPL match history · "
                    "FDR from **FPL fixtures API** (1=easy, 5=very hard) · PPDA~ = approximated from xG profile")
 
 
@@ -781,8 +758,8 @@ with tab4:
         st.markdown("**ESPN API** (no auth)")
         st.caption("Live standings — Pld, W, D, L, GF, GA, Pts per team. Refreshed every 5 min.")
     with sc2:
-        st.markdown("**Understat** (scraped)")
-        st.caption("xG, xGA, per-match history, home/away win rates, rolling form. All from embedded JSON.")
+        st.markdown("**FPL API** (no auth)")
+        st.caption("xG & xGA aggregated from per-player expected goals. Per-match results and FDR for all teams.")
     with sc3:
         st.markdown("**FPL API** (no auth)")
         st.caption("Fixture difficulty ratings (1–5) for all remaining Premier League games.")
@@ -799,13 +776,16 @@ with tab5:
         fetch_ta = st.button("Analyse", type="primary", disabled=not selected)
 
     if fetch_ta and selected:
-        with st.spinner(f"Loading {selected} season data from Understat…"):
+        with st.spinner(f"Loading {selected} season data from FPL…"):
             try:
-                _, matches_flat = fetch_understat()
-                matches = get_team_matches(selected, matches_flat)
-                if not matches:
+                xg_stats, match_history, _ = fetch_fpl_data()
+                raw_matches = match_history.get(selected, [])
+                if not raw_matches:
                     st.warning("No match data found — try the GW29 demo or check the team name.")
                 else:
+                    team_xg  = xg_stats.get(selected, {}).get('xg',  1.40)
+                    team_xga = xg_stats.get(selected, {}).get('xga', 1.40)
+                    matches  = enrich_matches(raw_matches, team_xg, team_xga)
                     st.session_state.team_cache[selected] = matches
             except Exception as e:
                 st.error(f"Failed to load team data: {e}")
@@ -855,14 +835,14 @@ with tab5:
         if n >= 5:
             st.subheader("Season rolling 5-game averages")
 
-            def rolling(key, window=5):
+            def _roll(key, window=5):
                 return [sum(matches[i-window+1:i+1][j][key] for j in range(window))/window
                         for i in range(len(matches)) if i >= window-1]
 
             gw_labels = [f"GW{m['gw']}" for m in matches[4:]]
-            r_xg   = rolling('xg')
-            r_xga  = rolling('xga')
-            r_xpts = rolling('xpts')
+            r_xpts = _roll('xpts')
+            r_gf   = _roll('goalsFor')
+            r_ga   = _roll('goalsAgainst')
 
             chart_opts = dict(plot_bgcolor='#16181c', paper_bgcolor='#16181c',
                               font=dict(color='#9095a3', size=11), height=230,
@@ -873,11 +853,11 @@ with tab5:
             cc1, cc2 = st.columns(2)
             with cc1:
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=gw_labels, y=r_xg,  name='xG',  line=dict(color='#22c55e', width=2)))
-                fig.add_trace(go.Scatter(x=gw_labels, y=r_xga, name='xGA', line=dict(color='#ef4444', width=2)))
+                fig.add_trace(go.Scatter(x=gw_labels, y=r_gf, name='Goals scored',  line=dict(color='#22c55e', width=2)))
+                fig.add_trace(go.Scatter(x=gw_labels, y=r_ga, name='Goals conceded', line=dict(color='#ef4444', width=2)))
                 fig.add_trace(go.Scatter(x=gw_labels, y=[LEAGUE_AVGS['xg']]*len(gw_labels),
-                                         name='Lg avg', line=dict(color='#5c6070', width=1, dash='dash')))
-                fig.update_layout(title='xG & xGA — 5-game rolling', **chart_opts)
+                                         name='Lg avg goals', line=dict(color='#5c6070', width=1, dash='dash')))
+                fig.update_layout(title='Goals scored & conceded — 5-game rolling', **chart_opts)
                 fig.update_xaxes(**ax); fig.update_yaxes(**ax)
                 st.plotly_chart(fig, width='stretch')
             with cc2:
