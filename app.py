@@ -136,7 +136,7 @@ def run_model(data: list, remaining: int):
     for i, t in enumerate(by_curr):
         t['current_pos'] = i + 1
 
-    by_pred = sorted(teams, key=lambda t: (t['raw_score'], -t['proj_pts']))
+    by_pred = sorted(teams, key=lambda t: (-t['proj_pts'], t['raw_score']))
     for i, t in enumerate(by_pred):
         t['pred_pos'] = i + 1
 
@@ -839,33 +839,28 @@ with tab4:
 
 # ══════════════════════════════════ TAB 5 ═══════════════════════════════════
 with tab5:
-    sel_col, btn_col = st.columns([4, 1])
-    with sel_col:
-        selected = st.selectbox("Select a team", [""] + sorted(TEAMS),
-                                format_func=lambda x: "Select a team…" if x == "" else x)
-    with btn_col:
-        st.write("")
-        fetch_ta = st.button("Analyse", type="primary", disabled=not selected)
+    selected = st.selectbox("Select a team", [""] + sorted(TEAMS),
+                            format_func=lambda x: "Select a team…" if x == "" else x)
 
-    if fetch_ta and selected:
-        with st.spinner(f"Loading {selected} season data from FPL…"):
+    # Auto-analyse whenever selection changes and isn't cached yet
+    if selected and selected not in st.session_state.team_cache:
+        with st.spinner(f"Loading {selected} data from FPL…"):
             try:
                 xg_stats, match_history, _ = fetch_fpl_data()
                 raw_matches = match_history.get(selected, [])
                 if not raw_matches:
-                    st.warning("No match data found — try the GW29 demo or check the team name.")
+                    st.warning("No match data found — check the team name.")
                 else:
                     team_xg  = xg_stats.get(selected, {}).get('xg',  1.40)
                     team_xga = xg_stats.get(selected, {}).get('xga', 1.40)
-                    matches  = enrich_matches(raw_matches, team_xg, team_xga)
-                    st.session_state.team_cache[selected] = matches
+                    st.session_state.team_cache[selected] = enrich_matches(raw_matches, team_xg, team_xga)
             except Exception as e:
                 st.error(f"Failed to load team data: {e}")
 
     cached = st.session_state.team_cache.get(selected) if selected else None
 
     if not selected or cached is None:
-        st.info("📊 Select a team and click **Analyse** to view their full season profile.")
+        st.info("📊 Select a team to view their full season profile.")
     else:
         matches = cached
         # Pull profile from main data if available
@@ -891,22 +886,18 @@ with tab5:
         roll_ppg = sum(3 if m['result']=='W' else 1 if m['result']=='D' else 0
                        for m in last6) / len(last6) if last6 else 0
 
-        def delta_md(val, avg):
-            d = val - avg
-            col = '#22c55e' if d > 0 else '#ef4444'
-            return f"<span style='color:{col};font-size:11px'>{'+' if d>=0 else ''}{d:.2f} vs avg</span>"
+        # ── Top stats: Played · W · D · L · Pts ─────────────────────────
+        mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+        mc1.metric("Played", n)
+        mc2.metric("Won",    w)
+        mc3.metric("Drawn",  d_cnt)
+        mc4.metric("Lost",   l)
+        mc5.metric("Points", pts_total)
 
-        sc1, sc2, sc3, sc4, sc5 = st.columns(5)
-        sc1.metric("Matches played", n, f"{w}W {d_cnt}D {l}L")
-        sc2.metric("Points", pts_total, f"{ppg:.2f} PPG")
-        sc3.metric("xG / game", f"{avg_xg:.2f}", f"{avg_xg - LEAGUE_AVGS['xg']:+.2f} vs avg")
-        sc4.metric("xGA / game", f"{avg_xga:.2f}", f"{avg_xga - LEAGUE_AVGS['xga']:+.2f} vs avg")
-        sc5.metric("Rolling 6-gm PPG", f"{roll_ppg:.2f}", f"{roll_ppg - LEAGUE_AVGS['rolling']:+.2f} vs avg")
+        st.divider()
 
-        # ── Rolling charts ────────────────────────────────────────────────
+        # ── Rolling charts with matching metric callouts ──────────────────
         if n >= 5:
-            st.subheader("Season rolling 5-game averages")
-
             def _roll(key, window=5):
                 return [sum(matches[i-window+1:i+1][j][key] for j in range(window))/window
                         for i in range(len(matches)) if i >= window-1]
@@ -914,32 +905,40 @@ with tab5:
             gw_labels = [f"GW{m['gw']}" for m in matches[4:]]
             r_gf  = _roll('goalsFor')
             r_ga  = _roll('goalsAgainst')
-            # Rolling PPG from actual results
             pts_per_match = [3 if m['result']=='W' else 1 if m['result']=='D' else 0 for m in matches]
-            r_ppg = [sum(pts_per_match[i-4:i+1])/5 for i in range(len(matches)) if i >= 4]
-            # Rolling xPts — only if per-match xG available
+            r_ppg  = [sum(pts_per_match[i-4:i+1])/5 for i in range(len(matches)) if i >= 4]
             has_xg = all(m.get('xg') is not None for m in matches)
             r_xpts = _roll('xpts') if has_xg else None
 
             chart_opts = dict(plot_bgcolor='#ffffff', paper_bgcolor='#ffffff',
-                              font=dict(color='#374151', size=11), height=230,
+                              font=dict(color='#374151', size=11), height=220,
                               margin=dict(t=36, b=20, l=20, r=20),
                               legend=dict(font=dict(size=10)))
             ax = dict(gridcolor='#e5e7eb', tickfont=dict(size=9), color='#6b7280')
 
+            # Chart 1 — Goals, with matching callouts
             cc1, cc2 = st.columns(2)
             with cc1:
+                cm1, cm2 = st.columns(2)
+                cm1.metric("Avg goals scored",   f"{avg_xg:.2f}")
+                cm2.metric("Avg goals conceded", f"{avg_xga:.2f}")
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=gw_labels, y=r_gf, name='Goals scored',  line=dict(color='#22c55e', width=2)))
-                fig.add_trace(go.Scatter(x=gw_labels, y=r_ga, name='Goals conceded', line=dict(color='#ef4444', width=2)))
-                fig.add_trace(go.Scatter(x=gw_labels, y=[LEAGUE_AVGS['xg']]*len(gw_labels),
-                                         name='Lg avg goals', line=dict(color='#5c6070', width=1, dash='dash')))
+                fig.add_trace(go.Scatter(x=gw_labels, y=r_gf, name='Goals scored',
+                                         line=dict(color='#22c55e', width=2)))
+                fig.add_trace(go.Scatter(x=gw_labels, y=r_ga, name='Goals conceded',
+                                         line=dict(color='#ef4444', width=2)))
                 fig.update_layout(title='Goals scored & conceded — 5-game rolling', **chart_opts)
                 fig.update_xaxes(**ax); fig.update_yaxes(**ax)
                 st.plotly_chart(fig, width='stretch')
+
+            # Chart 2 — xPts / PPG, with matching callouts
             with cc2:
-                fig2 = go.Figure()
                 if r_xpts:
+                    season_xpts = sum(m['xpts'] for m in matches)
+                    pm1, pm2 = st.columns(2)
+                    pm1.metric("Avg xPts / game", f"{season_xpts/n:.2f}")
+                    pm2.metric("Avg PPG",         f"{ppg:.2f}")
+                    fig2 = go.Figure()
                     fig2.add_trace(go.Scatter(x=gw_labels, y=r_xpts, name='xPts/game',
                                               fill='tozeroy', line=dict(color='#3b82f6', width=2),
                                               fillcolor='rgba(59,130,246,0.08)'))
@@ -947,15 +946,18 @@ with tab5:
                                               line=dict(color='#f59e0b', width=1.5, dash='dot')))
                     title2 = 'xPoints vs PPG — 5-game rolling'
                 else:
+                    pm1, = st.columns(1)
+                    pm1.metric("Rolling 6-gm PPG", f"{roll_ppg:.2f}")
+                    fig2 = go.Figure()
                     fig2.add_trace(go.Scatter(x=gw_labels, y=r_ppg, name='PPG',
                                               fill='tozeroy', line=dict(color='#3b82f6', width=2),
                                               fillcolor='rgba(59,130,246,0.08)'))
                     title2 = 'Points per game — 5-game rolling'
-                fig2.add_trace(go.Scatter(x=gw_labels, y=[LEAGUE_AVGS['ppg']]*len(gw_labels),
-                                          name='Lg avg', line=dict(color='#5c6070', width=1, dash='dash')))
                 fig2.update_layout(title=title2, **chart_opts)
                 fig2.update_xaxes(**ax); fig2.update_yaxes(**ax)
                 st.plotly_chart(fig2, width='stretch')
+
+        st.divider()
 
         # ── Last game ─────────────────────────────────────────────────────
         st.subheader("Last match")
