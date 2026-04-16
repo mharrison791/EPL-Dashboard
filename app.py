@@ -11,6 +11,133 @@ from urllib.parse import unquote
 
 st.set_page_config(page_title="EPL Predictor — WLS Model v2", page_icon="⚽", layout="wide")
 
+st.markdown("""
+<style>
+/* ── SEASON WALL NEWSPAPER THEME ── */
+.stApp { background-color: #f2ead8 !important; }
+.stApp > header { background-color: #1a1008 !important; border-bottom: 3px solid #c9982a !important; }
+[data-testid="stAppViewContainer"] > .main { background-color: #f2ead8; }
+[data-testid="block-container"] { background-color: #f2ead8 !important; }
+section[data-testid="stMain"] > div { background-color: #f2ead8 !important; }
+[data-testid="stSidebar"] { background-color: #f0e8d0 !important; border-right: 1px solid #c9b88a; }
+[data-testid="stSidebarContent"] { background-color: #f0e8d0; }
+body, p, li, span, label { color: #1a1008; }
+.stMarkdown, .stText { color: #1a1008 !important; }
+/* ── TAB NAVIGATION BAR ── */
+/* Tab list container — dark ink background */
+.stTabs [data-baseweb="tab-list"],
+[data-testid="stTabs"] [data-baseweb="tab-list"],
+div[class*="st-"] [data-baseweb="tab-list"] { background-color: #1a1008 !important; border-bottom: 3px solid #c9982a !important; gap: 0 !important; }
+/* Individual tab buttons */
+.stTabs [data-baseweb="tab"],
+[data-testid="stTab"],
+[data-baseweb="tab"] { color: #c9b88a !important; font-family: Georgia, serif !important; font-size: 13px !important; font-weight: 700 !important; letter-spacing: 0.5px !important; padding: 12px 20px !important; border-bottom: 3px solid transparent !important; margin-bottom: 0 !important; background-color: transparent !important; }
+/* All text inside tab buttons */
+[data-testid="stTab"] *,
+[data-baseweb="tab"] * { color: #c9b88a !important; }
+/* Active tab */
+.stTabs [aria-selected="true"],
+[data-testid="stTab"][aria-selected="true"],
+[data-baseweb="tab"][aria-selected="true"] { color: #c9982a !important; border-bottom: 3px solid #c9982a !important; background-color: rgba(201,152,42,0.1) !important; }
+[data-testid="stTab"][aria-selected="true"] *,
+[data-baseweb="tab"][aria-selected="true"] * { color: #c9982a !important; }
+/* Tab panel content area */
+.stTabs [data-baseweb="tab-panel"],
+[data-baseweb="tab-panel"] { background-color: #f2ead8 !important; padding-top: 20px !important; }
+[data-testid="stMetric"] { background: #fff8e8; border: 1px solid #c9b88a; border-radius: 3px; padding: 10px 14px !important; box-shadow: 1px 1px 0 #c9b88a; }
+[data-testid="stMetricLabel"] { color: #78716c !important; font-family: 'Courier New', monospace !important; font-size: 10px !important; text-transform: uppercase; letter-spacing: 0.5px; }
+[data-testid="stMetricValue"] { color: #1a1008 !important; font-family: Georgia, serif !important; font-weight: 900 !important; }
+[data-testid="stMetricDelta"] { font-family: 'Courier New', monospace !important; font-size: 10px !important; }
+.stSelectbox label { color: #78716c !important; font-family: 'Courier New', monospace !important; font-size: 11px !important; text-transform: uppercase; letter-spacing: 0.5px; }
+.stSelectbox > div > div { background: #fff8e8 !important; border: 1px solid #c9b88a !important; color: #1a1008 !important; border-radius: 3px !important; }
+.stButton > button { background: #1a1008 !important; color: #c9982a !important; border: 2px solid #c9982a !important; border-radius: 3px !important; font-family: Georgia, serif !important; font-weight: 700 !important; letter-spacing: 0.5px !important; }
+.stButton > button:hover { background: #c9982a !important; color: #1a1008 !important; }
+.streamlit-expanderHeader { background: #f0e8d0 !important; color: #1a1008 !important; border: 1px solid #c9b88a !important; font-family: Georgia, serif !important; font-weight: 700 !important; }
+.streamlit-expanderContent { background: #f9f3e3 !important; border: 1px solid #c9b88a !important; }
+[data-testid="stDataFrame"] { border: 1px solid #c9b88a !important; }
+hr { border-color: #c9b88a !important; }
+.stSpinner > div { color: #1a1008 !important; }
+[data-testid="stInfo"] { background: #f0e8d0 !important; border: 1px solid #c9b88a !important; color: #1a1008 !important; }
+[data-testid="stWarning"] { background: #fef9c3 !important; border: 1px solid #fde047 !important; color: #78350f !important; }
+[data-testid="stError"] { background: #fee2e2 !important; border: 1px solid #fca5a5 !important; color: #7f1d1d !important; }
+
+/* ── TOP TOOLBAR (hamburger, deploy icons) ── */
+.stApp > header { background-color: #1a1008 !important; }
+.stApp > header * { color: #c9b88a !important; }
+.stApp > header button { background: transparent !important; border: none !important; color: #c9b88a !important; }
+.stApp > header button:hover { color: #c9982a !important; }
+.stApp > header button span, .stApp > header button p { color: #c9b88a !important; }
+.stApp > header svg { fill: #c9b88a !important; stroke: #c9b88a; }
+[data-testid="stToolbar"] { background: #1a1008 !important; }
+[data-testid="stDecoration"] { display: none; }
+[data-testid="stHeader"] { background: #1a1008 !important; }
+[data-testid="stHeader"] * { color: #c9b88a !important; }
+/* Tab scroll arrows */
+[data-testid="stTabsScrollRight"],
+[data-testid="stTabsScrollLeft"] { background: #1a1008 !important; color: #c9b88a !important; border: none !important; }
+[data-testid="stTabsScrollRight"] *,
+[data-testid="stTabsScrollLeft"] * { color: #c9b88a !important; }
+/* Sidebar collapse / expand toggle — both states */
+[data-testid="stBaseButton-headerNoPadding"],
+[data-testid="stBaseButton-headerNoPadding"]:hover { color: #c9b88a !important; background: transparent !important; border: none !important; }
+[data-testid="stBaseButton-headerNoPadding"] * { color: #c9b88a !important; }
+[data-testid="collapsedControl"] { background: #1a1008 !important; color: #c9b88a !important; }
+[data-testid="collapsedControl"] * { color: #c9b88a !important; }
+/* Catch-all: any Streamlit toolbar/header button not already styled */
+[data-testid^="stBaseButton-header"] { color: #c9b88a !important; background: transparent !important; }
+[data-testid^="stBaseButton-header"] * { color: #c9b88a !important; }
+[data-testid="stToolbarActions"] * { color: #c9b88a !important; }
+[data-testid="stToolbarActions"] button { background: transparent !important; color: #c9b88a !important; }
+/* Running/status indicator */
+[data-testid="stStatusWidget"] * { color: #c9b88a !important; }
+[data-testid="stStatusWidget"] { background: transparent !important; }
+
+/* ── SIDEBAR — all text ink-dark on paper ── */
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] li,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] span:not([style*="color"]),
+[data-testid="stSidebar"] input { color: #1a1008 !important; }
+[data-testid="stSidebar"] .stMarkdown p { color: #78716c !important; }
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 { color: #1a1008 !important; font-family: Georgia, serif !important; }
+/* Sidebar buttons — paper style (readable on cream background) */
+[data-testid="stSidebar"] .stButton > button { background: #fff8e8 !important; color: #1a1008 !important; border: 2px solid #c9b88a !important; }
+[data-testid="stSidebar"] .stButton > button:hover { background: #c9982a !important; color: #1a1008 !important; border-color: #c9982a !important; }
+[data-testid="stSidebar"] .stButton > button p,
+[data-testid="stSidebar"] .stButton > button span,
+[data-testid="stSidebar"] .stButton > button div { color: #1a1008 !important; }
+
+/* ── NUMBER INPUTS ── */
+[data-testid="stNumberInput"] input { background: #fff8e8 !important; color: #1a1008 !important; border: 1px solid #c9b88a !important; border-radius: 3px !important; font-family: 'Courier New', monospace !important; font-weight: 700 !important; }
+[data-testid="stNumberInput"] label { color: #78716c !important; font-family: 'Courier New', monospace !important; font-size: 11px !important; text-transform: uppercase; letter-spacing: 0.5px; }
+[data-testid="stNumberInput"] button { background: #f0e8d0 !important; border: 1px solid #c9b88a !important; color: #1a1008 !important; }
+
+/* ── GENERAL TEXT OVERRIDES ── */
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li { color: #1a1008 !important; }
+[data-testid="stMarkdownContainer"] span:not([style*="color"]) { color: #1a1008 !important; }
+[data-testid="stText"] { color: #1a1008 !important; }
+/* Main-area button text: gold on ink background */
+.stButton > button [data-testid="stMarkdownContainer"] p { color: #c9982a !important; }
+.stButton > button [data-testid="stMarkdownContainer"] span { color: #c9982a !important; }
+/* On hover, background turns gold so text must switch to ink */
+.stButton > button:hover [data-testid="stMarkdownContainer"] p { color: #1a1008 !important; }
+.stButton > button:hover [data-testid="stMarkdownContainer"] span { color: #1a1008 !important; }
+/* Sidebar buttons: ink text on paper background (both normal and hover) */
+[data-testid="stSidebar"] .stButton > button [data-testid="stMarkdownContainer"] p { color: #1a1008 !important; }
+[data-testid="stSidebar"] .stButton > button [data-testid="stMarkdownContainer"] span { color: #1a1008 !important; }
+[data-testid="stSidebar"] .stButton > button:hover [data-testid="stMarkdownContainer"] p { color: #1a1008 !important; }
+[data-testid="stSidebar"] .stButton > button:hover [data-testid="stMarkdownContainer"] span { color: #1a1008 !important; }
+.stCaption, [data-testid="stCaptionContainer"] { color: #78716c !important; font-family: 'Courier New', monospace !important; font-size: 10px !important; }
+
+/* ── EXPANDER (new selector) ── */
+[data-testid="stExpander"] summary { background: #f0e8d0 !important; color: #1a1008 !important; border: 1px solid #c9b88a !important; font-family: Georgia, serif !important; font-weight: 700 !important; }
+[data-testid="stExpander"] details { background: #f9f3e3 !important; border: 1px solid #c9b88a !important; }
+</style>
+""", unsafe_allow_html=True)
+
 # ── CONSTANTS ────────────────────────────────────────────────────────────────
 TEAMS = [
     'Arsenal', 'Manchester City', 'Man United', 'Aston Villa', 'Liverpool',
@@ -568,6 +695,25 @@ for k, v in [('fetched_data', None), ('last_results', None),
         st.session_state[k] = v
 
 
+# ── MASTHEAD ─────────────────────────────────────────────────────────────────
+st.markdown("""
+<div style='background:#1a1008;padding:18px 28px;margin:-1rem -1rem 1.5rem -1rem;
+     border-bottom:4px solid #c9982a;display:flex;justify-content:space-between;align-items:center'>
+  <div>
+    <div style='font-family:Georgia,serif;font-size:28px;font-weight:900;color:#f2ead8;letter-spacing:-1px'>
+      THE SEASON <span style='color:#c9982a'>WALL</span>
+    </div>
+    <div style='font-family:Georgia,serif;font-size:12px;color:#9ca3af;font-style:italic;margin-top:2px'>
+      Premier League 2024/25 · Powered by xG · WLS Model · Poisson
+    </div>
+  </div>
+  <div style='text-align:right'>
+    <div style='font-size:10px;color:#9ca3af;letter-spacing:1px;font-family:"Courier New",monospace'>EPL PREDICTOR</div>
+    <div style='font-size:11px;color:#c9982a;font-family:"Courier New",monospace;margin-top:2px'>Season 2024/25</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
 # ── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## ⚽ EPL Predictor")
@@ -601,15 +747,15 @@ with st.sidebar:
 
 
 # ── TABS ─────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📋 Data Entry", "📊 Predicted Table",
-    "⚡ Power Rankings", "🔬 Model Info", "🔍 Team Analyser"
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📋 Standings", "🔮 Predictions", "⚡ Power Rankings",
+    "📅 Fixtures", "🗂️ Team Dossier", "ℹ️ Data Sources"
 ])
 
 
 # ══════════════════════════════════ TAB 1 ═══════════════════════════════════
 with tab1:
-    st.subheader("Data — 2025/26 Premier League")
+    st.markdown("<div style='font-family:Georgia,serif;font-size:14px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #1a1008;padding-bottom:5px;margin:18px 0 12px 0;color:#1a1008'>Data — 2025/26 Premier League</div>", unsafe_allow_html=True)
 
     hc, bc = st.columns([4, 1])
     with hc:
@@ -747,7 +893,7 @@ with tab3:
             with cols[3]:
                 st.markdown(
                     f"<div style='display:flex;align-items:center;gap:8px;padding:4px 0'>"
-                    f"<div style='flex:1;height:5px;background:#252830;border-radius:3px;overflow:hidden'>"
+                    f"<div style='flex:1;height:5px;background:#e5d9c0;border-radius:3px;overflow:hidden'>"
                     f"<div style='width:{sc}%;height:100%;background:{bc}'></div></div>"
                     f"<span style='color:{bc};font-weight:600;font-size:13px;min-width:28px'>{sc}</span></div>",
                     unsafe_allow_html=True)
@@ -771,7 +917,7 @@ with tab3:
                         st.markdown(f"**{label}** `{wt}`")
                         st.markdown(
                             f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:10px'>"
-                            f"<div style='flex:1;height:4px;background:#252830;border-radius:2px;overflow:hidden'>"
+                            f"<div style='flex:1;height:4px;background:#e5d9c0;border-radius:2px;overflow:hidden'>"
                             f"<div style='width:{round(pct)}%;height:100%;background:#3b82f6'></div></div>"
                             f"<span style='font-size:11px;min-width:44px'>{val}</span></div>",
                             unsafe_allow_html=True)
@@ -781,7 +927,12 @@ with tab3:
 
 # ══════════════════════════════════ TAB 4 ═══════════════════════════════════
 with tab4:
-    st.subheader("Model Specification")
+    st.markdown("<div style='font-family:Georgia,serif;font-size:14px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #1a1008;padding-bottom:5px;margin:18px 0 12px 0;color:#1a1008'>Upcoming Fixtures</div>", unsafe_allow_html=True)
+    st.info("⚽ Load live data and run the model to see upcoming fixtures by team. Fixture difficulty ratings are sourced from the FPL API.")
+
+# ══════════════════════════════════ TAB 6 ═══════════════════════════════════
+with tab6:
+    st.markdown("<div style='font-family:Georgia,serif;font-size:14px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #1a1008;padding-bottom:5px;margin:18px 0 12px 0;color:#1a1008'>Model Specification</div>", unsafe_allow_html=True)
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("R² in-sample", "0.93", "+0.04 vs v1 OLS")
     m2.metric("RMSE (positions)", "1.6", "−0.5 vs v1 OLS")
@@ -792,7 +943,7 @@ with tab4:
 
     lc, rc = st.columns(2)
     with lc:
-        st.markdown("### WLS Coefficients")
+        st.markdown("<div style='font-family:Georgia,serif;font-size:14px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #1a1008;padding-bottom:5px;margin:18px 0 12px 0;color:#1a1008'>WLS Coefficients</div>", unsafe_allow_html=True)
         st.caption("Negative = higher value → better (lower) predicted position")
         st.dataframe(pd.DataFrame([
             ("Intercept", "+19.40"),
@@ -809,7 +960,7 @@ with tab4:
         ], columns=["Predictor", "Coeff"]), hide_index=True, width='stretch')
 
     with rc:
-        st.markdown("### Season Decay Weights (λ=0.78)")
+        st.markdown("<div style='font-family:Georgia,serif;font-size:14px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #1a1008;padding-bottom:5px;margin:18px 0 12px 0;color:#1a1008'>Season Decay Weights (λ=0.78)</div>", unsafe_allow_html=True)
         st.dataframe(pd.DataFrame([
             ("2024–25","1.000"),("2023–24","0.780"),("2022–23","0.608"),
             ("2021–22","0.474"),("2020–21","0.370"),("2019–20","0.289"),
@@ -817,14 +968,14 @@ with tab4:
             ("2015–16","0.107"),("2010–15 avg","0.052"),("2004–10 avg","0.018"),
         ], columns=["Season","Weight"]), hide_index=True, width='stretch')
 
-        st.markdown("### Power Ranking Weights")
+        st.markdown("<div style='font-family:Georgia,serif;font-size:14px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #1a1008;padding-bottom:5px;margin:18px 0 12px 0;color:#1a1008'>Power Ranking Weights</div>", unsafe_allow_html=True)
         st.markdown("- **Recent form** (rolling 6-game PPG) — 35%\n"
                     "- **Underlying quality** (net xG/game) — 30%\n"
                     "- **Squad resilience** — 20%\n"
                     "- **Fixture-adjusted efficiency** — 15%")
 
     st.divider()
-    st.markdown("### Data Sources")
+    st.markdown("<div style='font-family:Georgia,serif;font-size:14px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #1a1008;padding-bottom:5px;margin:18px 0 12px 0;color:#1a1008'>Data Sources</div>", unsafe_allow_html=True)
     sc1, sc2, sc3 = st.columns(3)
     with sc1:
         st.markdown("**ESPN API** (no auth)")
@@ -863,6 +1014,17 @@ with tab5:
         st.info("📊 Select a team to view their full season profile.")
     else:
         matches = cached
+        st.markdown(f"""
+<div style='background:#fff8e8;border:1px solid #c9b88a;border-radius:4px;
+     padding:14px 18px;margin-bottom:16px;box-shadow:2px 2px 0 #c9b88a'>
+  <div style='font-size:9px;font-weight:900;letter-spacing:1px;text-transform:uppercase;
+       color:#c9982a;font-family:"Courier New",monospace;margin-bottom:4px'>🗂️ Team Dossier</div>
+  <div style='font-family:Georgia,serif;font-size:24px;font-weight:900;color:#1a1008'>{selected}</div>
+  <div style='font-size:11px;color:#78716c;font-family:"Courier New",monospace;margin-top:2px'>
+    Season 2024/25 · Gameweek Report
+  </div>
+</div>
+""", unsafe_allow_html=True)
         # Pull profile from main data if available
         profile = {}
         if st.session_state.fetched_data:
@@ -886,6 +1048,58 @@ with tab5:
         roll_ppg = sum(3 if m['result']=='W' else 1 if m['result']=='D' else 0
                        for m in last6) / len(last6) if last6 else 0
 
+        # Auto headline
+        if avg_xg > 2.0:
+            headline = f"{selected}'s attack clicks into overdrive — xG of {avg_xg:.2f} among the league's elite"
+            tag = "🌟 In Form"
+        elif avg_xg < 1.0:
+            headline = f"{selected} toothless in front of goal — xG of {avg_xg:.2f} is among the division's lowest"
+            tag = "⚠️ Crisis Watch"
+        elif avg_xga > 1.8:
+            headline = f"{selected}'s defensive crisis deepens — xGA of {avg_xga:.2f} now one of the worst in the league"
+            tag = "⚠️ Crisis Watch"
+        elif avg_xga < 0.9:
+            headline = f"{selected} build a fortress — an xGA of {avg_xga:.2f} reflects a miserly, organised defence"
+            tag = "🛡️ Defensive Rock"
+        elif ppg > 2.0:
+            headline = f"{selected} in superb form this season — {ppg:.2f} PPG puts them firmly in contention"
+            tag = "🌟 In Form"
+        elif ppg < 1.0:
+            headline = f"{selected}'s tough campaign continues with just {ppg:.2f} points per game this term"
+            tag = "📉 Struggling"
+        else:
+            headline = f"{selected} endure a mixed campaign — {ppg:.2f} PPG and inconsistent form tell the full story"
+            tag = "📊 Season Review"
+
+        st.markdown(f"""
+<div style='background:#f9f3e3;border:1px solid #c9b88a;border-radius:4px;
+     padding:12px 16px;margin-bottom:12px;box-shadow:1px 1px 0 #c9b88a'>
+  <div style='font-size:9px;font-weight:900;letter-spacing:1px;text-transform:uppercase;
+       color:#c9982a;font-family:"Courier New",monospace;margin-bottom:4px'>{tag}</div>
+  <div style='font-family:Georgia,serif;font-size:15px;font-weight:700;
+       color:#1a1008;line-height:1.4'>{headline}</div>
+</div>
+""", unsafe_allow_html=True)
+
+        def _badge(m):
+            r = m['result']
+            bg  = '#dcfce7' if r == 'W' else '#fef9c3' if r == 'D' else '#fee2e2'
+            clr = '#15803d' if r == 'W' else '#a16207' if r == 'D' else '#b91c1c'
+            bdr = '#86efac' if r == 'W' else '#fde047' if r == 'D' else '#fca5a5'
+            return (
+                f"<div style='width:22px;height:22px;border-radius:3px;display:inline-flex;"
+                f"align-items:center;justify-content:center;font-size:9px;font-weight:900;"
+                f"font-family:\"Courier New\",monospace;margin-right:3px;"
+                f"background:{bg};color:{clr};border:1px solid {bdr}'>{r}</div>"
+            )
+        badge_html = "".join([_badge(m) for m in matches[-6:]])
+        st.markdown(
+            f"<div style='margin-bottom:14px'>"
+            f"<span style='font-size:10px;color:#78716c;font-family:\"Courier New\",monospace;margin-right:8px'>LAST 6:</span>"
+            f"{badge_html}</div>",
+            unsafe_allow_html=True
+        )
+
         # ── Top stats: Played · W · D · L · Pts ─────────────────────────
         mc1, mc2, mc3, mc4, mc5 = st.columns(5)
         mc1.metric("Played", n)
@@ -893,6 +1107,28 @@ with tab5:
         mc3.metric("Drawn",  d_cnt)
         mc4.metric("Lost",   l)
         mc5.metric("Points", pts_total)
+
+        if profile and st.session_state.fetched_data:
+            sorted_teams = sorted(st.session_state.fetched_data, key=lambda x: (-x.get('proj_pts', 0)))
+            proj_pos = next((i+1 for i, t in enumerate(sorted_teams) if t['name'] == selected), None)
+            if proj_pos:
+                if proj_pos <= 4:
+                    stamp_color, stamp_text = '#16a34a', 'CHAMPIONS LEAGUE'
+                elif proj_pos <= 6:
+                    stamp_color, stamp_text = '#1d4ed8', 'EUROPA LEAGUE'
+                elif proj_pos >= 18:
+                    stamp_color, stamp_text = '#dc2626', 'RELEGATED'
+                else:
+                    stamp_color, stamp_text = None, None
+                if stamp_color:
+                    st.markdown(
+                        f"<div style='display:inline-block;padding:5px 14px;"
+                        f"border:2.5px solid {stamp_color};border-radius:3px;"
+                        f"font-family:\"Courier New\",monospace;font-size:12px;font-weight:900;"
+                        f"letter-spacing:1.5px;text-transform:uppercase;color:{stamp_color};"
+                        f"transform:rotate(-3deg);margin:8px 0 4px 0'>{stamp_text}</div>",
+                        unsafe_allow_html=True
+                    )
 
         st.divider()
 
@@ -910,11 +1146,11 @@ with tab5:
             has_xg = all(m.get('xg') is not None for m in matches)
             r_xpts = _roll('xpts') if has_xg else None
 
-            chart_opts = dict(plot_bgcolor='#ffffff', paper_bgcolor='#ffffff',
-                              font=dict(color='#374151', size=11), height=220,
+            chart_opts = dict(plot_bgcolor='#f9f3e3', paper_bgcolor='#f2ead8',
+                              font=dict(color='#1a1008', size=11, family='Georgia, serif'), height=220,
                               margin=dict(t=36, b=20, l=20, r=20),
                               legend=dict(font=dict(size=10)))
-            ax = dict(gridcolor='#e5e7eb', tickfont=dict(size=9), color='#6b7280')
+            ax = dict(gridcolor='#c9b88a', tickfont=dict(size=9), color='#78716c')
 
             # Chart 1 — Goals, with matching callouts
             cc1, cc2 = st.columns(2)
@@ -960,14 +1196,14 @@ with tab5:
         st.divider()
 
         # ── Last game ─────────────────────────────────────────────────────
-        st.subheader("Last match")
+        st.markdown("<div style='font-family:Georgia,serif;font-size:14px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #1a1008;padding-bottom:5px;margin:18px 0 12px 0;color:#1a1008'>Last Match</div>", unsafe_allow_html=True)
         lg = matches[-1]
-        rc = '#22c55e' if lg['result']=='W' else '#ef4444' if lg['result']=='L' else '#f59e0b'
+        rc = '#16a34a' if lg['result']=='W' else '#dc2626' if lg['result']=='L' else '#b45309'
         st.markdown(
             f"<div style='font-size:30px;font-weight:700'>"
             f"<span style='color:{rc}'>{lg['result']}</span> &nbsp;"
             f"{lg['goalsFor']}–{lg['goalsAgainst']} &nbsp;"
-            f"<span style='color:#9095a3;font-size:18px'>vs {lg['opponent']} ({'Home' if lg['venue']=='H' else 'Away'}) · {lg['date'][:10]}</span></div>",
+            f"<span style='color:#78716c;font-size:18px'>vs {lg['opponent']} ({'Home' if lg['venue']=='H' else 'Away'}) · {lg['date'][:10]}</span></div>",
             unsafe_allow_html=True)
         lc1, lc2, lc3, lc4, lc5 = st.columns(5)
         lc1.metric("Goals scored",   lg['goalsFor'])
@@ -978,9 +1214,9 @@ with tab5:
 
         verdict = generate_verdict(selected, matches)
         st.markdown(
-            f"<div style='border-left:3px solid #22c55e;padding:12px 16px;background:#1a1e24;"
-            f"border-radius:0 6px 6px 0;font-size:13px;color:#9095a3;line-height:1.7;"
-            f"font-style:italic;margin:12px 0'>{verdict}</div>",
+            f"<div style='border-left:3px solid #c9982a;padding:10px 14px;background:#f0e8d0;"
+            f"border-radius:0 4px 4px 0;font-family:\"Courier New\",monospace;"
+            f"font-size:11px;color:#4a3728;line-height:1.7;margin:12px 0'>{verdict}</div>",
             unsafe_allow_html=True)
 
         # ── Strengths/Weaknesses + Flags ──────────────────────────────────
@@ -1003,8 +1239,8 @@ with tab5:
                 display = f"{int(val*100)}%" if is_pct else f"{val:.2f}"
                 st.markdown(
                     f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:7px'>"
-                    f"<div style='font-size:11px;color:#9095a3;width:150px;flex-shrink:0'>{label}</div>"
-                    f"<div style='flex:1;height:6px;background:#252830;border-radius:3px;overflow:hidden'>"
+                    f"<div style='font-size:11px;color:#78716c;width:150px;flex-shrink:0'>{label}</div>"
+                    f"<div style='flex:1;height:6px;background:#e5d9c0;border-radius:3px;overflow:hidden'>"
                     f"<div style='width:{pct:.0f}%;height:100%;background:{bar_col}'></div></div>"
                     f"<div style='font-size:11px;min-width:36px;text-align:right'>{display}</div></div>",
                     unsafe_allow_html=True)
@@ -1019,11 +1255,11 @@ with tab5:
             for f in flags:
                 dot = '#ef4444' if f['type'] == 'danger' else '#22c55e'
                 st.markdown(
-                    f"<div style='display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #252830'>"
+                    f"<div style='display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #c9b88a'>"
                     f"<div style='width:8px;height:8px;background:{dot};border-radius:50%;"
                     f"margin-top:4px;flex-shrink:0'></div>"
                     f"<div style='font-size:12px'><strong>{f['title']}</strong><br>"
-                    f"<span style='color:#9095a3'>{f['detail']}</span></div></div>",
+                    f"<span style='color:#78716c'>{f['detail']}</span></div></div>",
                     unsafe_allow_html=True)
 
         # ── Match log ─────────────────────────────────────────────────────
