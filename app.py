@@ -32,14 +32,25 @@ div[class*="st-"] [data-baseweb="tab-list"] { background-color: #1a1008 !importa
 .stTabs [data-baseweb="tab"],
 [data-testid="stTab"],
 [data-baseweb="tab"] { color: #c9b88a !important; font-family: Georgia, serif !important; font-size: 13px !important; font-weight: 700 !important; letter-spacing: 0.5px !important; padding: 12px 20px !important; border-bottom: 3px solid transparent !important; margin-bottom: 0 !important; background-color: transparent !important; }
-/* All text inside tab buttons */
+/* All text inside inactive tab buttons — override stMarkdownContainer p rule */
 [data-testid="stTab"] *,
-[data-baseweb="tab"] * { color: #c9b88a !important; }
+[data-baseweb="tab"] *,
+[data-testid="stTab"] p,
+[data-testid="stTab"] span,
+[data-testid="stTab"] div,
+[data-testid="stTab"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stTab"] [data-testid="stMarkdownContainer"] span,
+[data-baseweb="tab"] [data-testid="stMarkdownContainer"] p,
+[data-baseweb="tab"] [data-testid="stMarkdownContainer"] span { color: #c9b88a !important; }
 /* Active tab */
 .stTabs [aria-selected="true"],
 [data-testid="stTab"][aria-selected="true"],
 [data-baseweb="tab"][aria-selected="true"] { color: #c9982a !important; border-bottom: 3px solid #c9982a !important; background-color: rgba(201,152,42,0.1) !important; }
 [data-testid="stTab"][aria-selected="true"] *,
+[data-testid="stTab"][aria-selected="true"] p,
+[data-testid="stTab"][aria-selected="true"] span,
+[data-testid="stTab"][aria-selected="true"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stTab"][aria-selected="true"] [data-testid="stMarkdownContainer"] span,
 [data-baseweb="tab"][aria-selected="true"] * { color: #c9982a !important; }
 /* Tab panel content area */
 .stTabs [data-baseweb="tab-panel"],
