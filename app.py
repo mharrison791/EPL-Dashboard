@@ -758,9 +758,9 @@ with st.sidebar:
 
 
 # ── TABS ─────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📋 Standings", "🔮 Predictions", "⚡ Power Rankings",
-    "📅 Fixtures", "🗂️ Team Dossier", "ℹ️ Data Sources"
+    "📅 Fixtures", "🗂️ Team Dossier", "ℹ️ Data Sources", "📈 Relative Performance"
 ])
 
 
@@ -1284,3 +1284,222 @@ with tab5:
                 'xPts': round(m['xpts'], 2) if m.get('xpts') is not None else '—',
             } for m in matches])
             st.dataframe(log_df, hide_index=True, width='stretch')
+
+
+# ══════════════════════════════════ TAB 7 ═══════════════════════════════════
+with tab7:
+    _H7 = ("<div style='font-family:Georgia,serif;font-size:14px;font-weight:900;"
+           "letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #1a1008;"
+           "padding-bottom:5px;margin:18px 0 12px 0;color:#1a1008'>{}</div>")
+
+    st.markdown(_H7.format("Relative Performance — Historical Position Model"),
+                unsafe_allow_html=True)
+    st.caption(
+        "Each team's per-game stats are scaled to 38 games, then mapped against "
+        "historical EPL finishing-position averages (2000–2024). "
+        "The output is a **continuous decimal position** — e.g. 3.4 means 'performing like "
+        "a typical 3rd–4th place team historically'. Values below 1 or above 20 indicate "
+        "historically unprecedented output."
+    )
+
+    if st.session_state.fetched_data is None:
+        st.info("⚽ Load data first — click **Fetch Live Data** in the Standings tab or load GW29 Demo from the sidebar.")
+    else:
+        _d7 = st.session_state.fetched_data
+
+        # ── Historical calibration anchors (EPL 2000–2024 approximate averages) ──
+        # _H7_PTS[i]  = avg final pts for finishing position i+1
+        # _H7_XPTS[i] = avg Poisson-model xPts for finishing position i+1
+        # Both series strictly decrease so position maps monotonically to score.
+        _H7_PTS  = [87, 79, 72, 66, 61, 57, 53, 50, 47, 44,
+                    42, 40, 38, 36, 34, 32, 30, 28, 25, 22]
+        _H7_XPTS = [83, 76, 69, 63, 58, 55, 51, 48, 45, 43,
+                    41, 39, 37, 35, 33, 31, 29, 27, 24, 21]
+        # Composite = 60% pts + 40% xPts (blends results with underlying shot quality)
+        _H7_REF  = [0.6 * p + 0.4 * x for p, x in zip(_H7_PTS, _H7_XPTS)]
+
+        def _perf_pos(score):
+            """Map composite score → continuous historical position via interpolation."""
+            ref = _H7_REF
+            # Extrapolate above position 1 (historically exceptional)
+            if score >= ref[0]:
+                slope = ref[1] - ref[0]          # < 0
+                return 1.0 + (score - ref[0]) / slope
+            # Extrapolate below position 20 (historically very poor)
+            if score <= ref[-1]:
+                slope = ref[-1] - ref[-2]        # < 0
+                return 20.0 + (score - ref[-1]) / slope
+            # Linear interpolation between adjacent anchors
+            for i in range(len(ref) - 1):
+                if ref[i] >= score >= ref[i + 1]:
+                    t = (ref[i] - score) / (ref[i] - ref[i + 1])
+                    return (i + 1.0) + t
+            return 10.0
+
+        # ── Derive table positions from current data ─────────────────────────
+        _by_pts7 = sorted(_d7, key=lambda d: (-d['pts'], -(d['gf'] - d['ga'])))
+        _tpos_map = {d.get('name', ''): i + 1 for i, d in enumerate(_by_pts7)}
+
+        # ── Build per-team records ───────────────────────────────────────────
+        _rp7 = []
+        for _d in _d7:
+            _pld       = max(_d['pld'], 1)
+            _proj_pts  = (_d['pts'] / _pld) * 38
+            _proj_xpts = calc_xpts(_d['xg'], _d['xga']) * 38   # xg/xga already per-game
+            _comp      = 0.6 * _proj_pts + 0.4 * _proj_xpts
+            _pp        = round(_perf_pos(_comp), 1)
+            _tp        = _tpos_map.get(_d.get('name', ''), 10)
+            # delta > 0: performance position worse than table → results exceed quality
+            # delta < 0: performance position better than table → quality exceeds results
+            _delta     = round(_pp - _tp, 1)
+            _rp7.append({
+                'name':      _d.get('name', '?'),
+                'pld':       _pld,
+                'pts':       _d['pts'],
+                'proj_pts':  round(_proj_pts, 1),
+                'proj_xpts': round(_proj_xpts, 1),
+                'composite': round(_comp, 1),
+                'perf_pos':  _pp,
+                'table_pos': _tp,
+                'delta':     _delta,
+            })
+
+        # Sort by performance position ascending (best-performing team at top)
+        _rp7.sort(key=lambda t: t['perf_pos'])
+
+        # ── Theme ────────────────────────────────────────────────────────────
+        _BG7 = _PP7 = '#f2ead8'
+        _GR7, _INK7, _GOLD7 = '#e0d5b8', '#1a1008', '#c9982a'
+        _GRN7, _RED7, _NEU7 = '#22c55e', '#ef4444', '#78716c'
+
+        # ── Headline metrics ─────────────────────────────────────────────────
+        _best_q  = min(_rp7, key=lambda t: t['perf_pos'])
+        _qual_gt = min(_rp7, key=lambda t: t['delta'])   # most negative Δ
+        _res_gt  = max(_rp7, key=lambda t: t['delta'])   # most positive Δ
+        _calib   = min(_rp7, key=lambda t: abs(t['delta']))
+
+        _mc1, _mc2, _mc3, _mc4 = st.columns(4)
+        _mc1.metric("Best Underlying Quality", _best_q['name'],
+                    f"Perf. pos {_best_q['perf_pos']:.1f}  (table: {_best_q['table_pos']})")
+        _mc2.metric("Quality > Results", _qual_gt['name'],
+                    f"Δ {_qual_gt['delta']:.1f}  (deserves higher)",
+                    delta_color="normal")
+        _mc3.metric("Results > Quality", _res_gt['name'],
+                    f"Δ +{_res_gt['delta']:.1f}  (table flatters)",
+                    delta_color="inverse")
+        _mc4.metric("Most Calibrated", _calib['name'],
+                    f"Δ {_calib['delta']:+.1f} positions")
+        st.divider()
+
+        # ═══════════════════════════════════════════════════════════════════
+        # DUMBBELL CHART — performance position vs table position
+        # ═══════════════════════════════════════════════════════════════════
+        st.markdown(_H7.format("Performance Position vs Table Position"), unsafe_allow_html=True)
+        st.caption(
+            "● = current table position  ◆ = historical performance position. "
+            "🟢 Green: quality exceeds results (team deserves better). "
+            "🔴 Red: results exceed quality (table position flatters)."
+        )
+
+        _names7  = [t['name']      for t in _rp7]
+        _tpos7   = [t['table_pos'] for t in _rp7]
+        _ppos7   = [t['perf_pos']  for t in _rp7]
+        _deltas7 = [t['delta']     for t in _rp7]
+
+        _fig7 = go.Figure()
+
+        # Connecting lines (one trace per team to allow per-team colour)
+        for _nm, _tp, _pp, _dlt in zip(_names7, _tpos7, _ppos7, _deltas7):
+            _lc = _GRN7 if _dlt < -0.5 else _RED7 if _dlt > 0.5 else _NEU7
+            _fig7.add_trace(go.Scatter(
+                x=[_tp, _pp], y=[_nm, _nm],
+                mode='lines',
+                line=dict(color=_lc, width=2.5),
+                showlegend=False,
+                hoverinfo='skip',
+            ))
+
+        # Table position dots
+        _fig7.add_trace(go.Scatter(
+            x=_tpos7, y=_names7,
+            mode='markers',
+            marker=dict(size=13, color=_INK7, symbol='circle',
+                        line=dict(width=1.5, color=_INK7)),
+            name='Table Position',
+            hovertemplate='<b>%{y}</b><br>Table position: %{x}<extra></extra>',
+        ))
+
+        # Performance position diamonds
+        _dclrs7 = [_GRN7 if d < -0.5 else _RED7 if d > 0.5 else _NEU7 for d in _deltas7]
+        _fig7.add_trace(go.Scatter(
+            x=_ppos7, y=_names7,
+            mode='markers',
+            marker=dict(size=14, color=_dclrs7, symbol='diamond',
+                        line=dict(width=1.5, color=_INK7)),
+            name='Performance Position',
+            customdata=[[t['proj_pts'], t['proj_xpts'], t['composite'], t['delta']] for t in _rp7],
+            hovertemplate=(
+                '<b>%{y}</b><br>'
+                'Performance position: <b>%{x:.1f}</b><br>'
+                'Projected pts (38g): %{customdata[0]:.1f}<br>'
+                'Projected xPts (38g): %{customdata[1]:.1f}<br>'
+                'Composite score: %{customdata[2]:.1f}<br>'
+                'Δ vs table: %{customdata[3]:+.1f}<extra></extra>'
+            ),
+        ))
+
+        # Light zone bands
+        _fig7.add_vrect(x0=0.5, x1=4.5,   fillcolor='#2563eb', opacity=0.05, line_width=0)
+        _fig7.add_vrect(x0=4.5, x1=6.5,   fillcolor='#16a34a', opacity=0.05, line_width=0)
+        _fig7.add_vrect(x0=17.5, x1=22.0, fillcolor='#ef4444', opacity=0.05, line_width=0)
+
+        _x_hi = max(max(_ppos7), 20) + 0.8
+        _fig7.update_layout(
+            paper_bgcolor=_PP7, plot_bgcolor=_BG7,
+            font=dict(family='Georgia, serif', color=_INK7, size=11),
+            height=max(500, len(_rp7) * 28 + 80),
+            margin=dict(l=20, r=30, t=20, b=50),
+            xaxis=dict(
+                title='Historical position equivalent  (◆ = performance position)',
+                gridcolor=_GR7, zerolinecolor=_GR7,
+                range=[0.3, _x_hi],
+                tickvals=list(range(1, 22)),
+                ticktext=[str(i) if 1 <= i <= 20 else f'>{i-1}' for i in range(1, 22)],
+            ),
+            yaxis=dict(gridcolor=_GR7, autorange='reversed'),
+            legend=dict(
+                orientation='h', yanchor='bottom', y=1.01, xanchor='right', x=1,
+                bgcolor='rgba(0,0,0,0)', borderwidth=0,
+            ),
+        )
+        st.plotly_chart(_fig7, use_container_width=True)
+
+        # ═══════════════════════════════════════════════════════════════════
+        # FULL RANKINGS TABLE
+        # ═══════════════════════════════════════════════════════════════════
+        st.markdown(_H7.format("Full Rankings"), unsafe_allow_html=True)
+        st.caption(
+            "Composite = 60 % projected pts + 40 % projected xPts (Poisson), both scaled to 38 games. "
+            "Δ = Performance Pos − Table Pos: negative → quality exceeds results; "
+            "positive → results exceed quality."
+        )
+
+        _tbl7 = []
+        for _i, _t in enumerate(_rp7):
+            _s7 = '+' if _t['delta'] >= 0 else ''
+            _v7 = ('🟢 Quality > Results' if _t['delta'] < -1.5
+                   else '🔴 Results > Quality' if _t['delta'] > 1.5
+                   else '⚪ Calibrated')
+            _tbl7.append({
+                'Perf. Rank':  _i + 1,
+                'Team':        _t['name'],
+                'Table Pos':   _t['table_pos'],
+                'Perf. Pos':   f"{_t['perf_pos']:.1f}",
+                'Δ':           f"{_s7}{_t['delta']:.1f}",
+                'Proj. Pts':   _t['proj_pts'],
+                'Proj. xPts':  _t['proj_xpts'],
+                'Composite':   _t['composite'],
+                'Played':      _t['pld'],
+                'Verdict':     _v7,
+            })
+        st.dataframe(pd.DataFrame(_tbl7), hide_index=True, use_container_width=True)
